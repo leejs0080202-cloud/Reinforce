@@ -1,463 +1,779 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Trash Shooter</title>
-    <!-- Tailwind CSS for modern, mobile-first styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- onnxruntime-web for AI model inference in the browser -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+    <title>CartPole: 균형의 예술</title>
     <style>
-        body {
-            background-color: #e3f2fd;
-            font-family: 'Inter', sans-serif;
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --bg-color: #1a1a1a;
+            --primary-color: #00aaff;
+            --secondary-color: #ff0077;
+            --text-color: #f0f0f0;
+            --ground-color: #333;
+            --cart-color: #e0e0e0;
+            --pole-color: #00aaff;
+            --fail-color: #ff4444;
+            --pole-shadow-color: rgba(0, 170, 255, 0.5);
+            --font-display: 'Orbitron', sans-serif;
+            --font-body: 'Noto Sans KR', sans-serif;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            margin: 0;
+            flex-direction: column;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-body);
             overflow: hidden;
-            touch-action: none;
-        }
-        canvas {
-            touch-action: none;
-            cursor: none;
-            border-radius: 1.5rem;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1), 0 6px 6px rgba(0, 0, 0, 0.15);
-            -webkit-touch-callout: none;
             -webkit-user-select: none;
-            -khtml-user-select: none;
-            -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
         }
-        .game-container {
-            position: relative;
-            background-color: white;
-            padding: 1.5rem;
-            border-radius: 2rem;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-        }
-        #loading-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+
+        .game-wrapper {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            gap: 1rem;
+            gap: 20px;
         }
-        .dot-container {
-            display: flex;
-            gap: 0.5rem;
+
+        .game-container {
+            position: relative;
+            width: 95vw;
+            height: 70vh;
+            max-width: 1000px;
+            max-height: 550px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            background-color: #252525;
+            background-image: 
+                linear-gradient(rgba(0, 170, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 170, 255, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            background-position: 0px 0px;
+            border-radius: 15px;
+            overflow: hidden;
+            transition: background-position 0.1s linear;
         }
-        .dot {
-            width: 0.75rem;
-            height: 0.75rem;
-            background-color: #3498db;
-            border-radius: 50%;
-            animation: pulse 1.5s infinite ease-in-out;
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
         }
-        .dot:nth-child(2) { animation-delay: 0.2s; }
-        .dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.5); opacity: 0.5; }
-        }
-        .message-box {
+
+        .ui-overlay {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            padding: 1.5rem 2.5rem;
-            background-color: #fcf8e3;
-            border: 2px solid #fbeed5;
-            border-radius: 1rem;
-            color: #8a6d3b;
-            font-size: 1.5rem;
-            font-weight: bold;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            line-height: 1.5;
-            z-index: 10;
+            top: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
         }
-        .controls {
+
+        .ui-overlay.visible {
+            opacity: 1;
+        }
+
+        .top-ui {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            text-shadow: 0 0 10px var(--primary-color);
+        }
+
+        .status-indicator {
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+
+        .status-user { background-color: var(--primary-color); color: var(--bg-color); }
+        .status-ai { background-color: var(--secondary-color); color: var(--bg-color); }
+        .status-training { background-color: #ffaa00; color: var(--bg-color); }
+        #ws-status { font-size: 0.9rem; margin-top: 5px; opacity: 0.7; }
+
+        #modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
             display: flex;
             justify-content: center;
             align-items: center;
-            gap: 1rem;
-            margin-top: 1rem;
+            flex-direction: column;
+            z-index: 100;
+            opacity: 1;
+            transition: opacity 0.3s ease, visibility 0.3s;
+            visibility: visible;
         }
+        
+        #modal.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .modal-content {
+            text-align: center;
+            padding: 40px;
+            background: rgba(40, 40, 40, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 0 25px rgba(0,0,0,0.5);
+            border: 1px solid var(--primary-color);
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        
+        #modal:not(.hidden) .modal-content {
+             transform: scale(1);
+        }
+
+        #modal h1 {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+            text-shadow: 0 0 15px var(--primary-color);
+        }
+
+        #modal p {
+            margin-bottom: 30px;
+            font-size: 1.2rem;
+            color: var(--text-color);
+        }
+        
+        #modal button {
+            font-family: var(--font-display);
+            background: transparent;
+            color: var(--text-color);
+            border: 2px solid var(--text-color);
+            padding: 12px 25px;
+            margin: 0 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            pointer-events: all;
+        }
+
+        #modal button:hover {
+            background: var(--primary-color);
+            color: var(--bg-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 15px var(--primary-color);
+        }
+        
+        #modal button.ai-btn:hover {
+             background: var(--secondary-color);
+             border-color: var(--secondary-color);
+             box-shadow: 0 0 15px var(--secondary-color);
+        }
+        
+        #modal button.training-btn:hover {
+            background: #ffaa00;
+            border-color: #ffaa00;
+            box-shadow: 0 0 15px #ffaa00;
+        }
+
+        /* Controls outside the canvas */
+        #controls-container {
+            text-align: center;
+            color: rgba(240, 240, 240, 0.6);
+            display: none; /* Initially hidden */
+        }
+
+        #touch-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .touch-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .touch-btn {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent; /* Disable blue tap highlight on mobile */
+        }
+
+        .touch-btn:active {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
     </style>
 </head>
-<body class="bg-blue-50">
-
-    <!-- Game UI Container -->
-    <div class="game-container">
-        <h1 class="text-4xl font-extrabold text-gray-800 text-center mb-4">AI Trash Shooter</h1>
-        <div class="flex justify-between items-center px-4 mb-4">
-            <span id="score-display" class="text-xl font-bold text-gray-600">Score: 0</span>
-            <span id="lives-display" class="text-xl font-bold text-gray-600">Lives: 3</span>
-        </div>
-        <div id="canvas-wrapper" class="relative">
-            <canvas id="gameCanvas" width="800" height="600"></canvas>
-            <!-- Loading indicator overlay -->
-            <div id="loading-indicator">
-                <div class="dot-container">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
+<body>
+    <div class="game-wrapper">
+        <div class="game-container">
+            <canvas id="game-canvas"></canvas>
+            <div id="ui-overlay" class="ui-overlay">
+                <div class="top-ui">
+                    <div id="status-display">
+                        <div id="game-mode-indicator" class="status-indicator status-user">USER MODE</div>
+                        <div id="ws-status">WebSocket: Disconnected</div>
+                    </div>
+                    <div>SCORE: <span id="score">0</span></div>
                 </div>
-                <span class="text-gray-500 font-medium mt-2">Loading AI Model...</span>
             </div>
-            <!-- Message box overlay -->
-            <div id="message-box" class="message-box hidden"></div>
+            <div id="modal">
+                <div class="modal-content">
+                    <h1>CartPole</h1>
+                    <p>균형의 예술</p>
+                    <div>
+                        <button id="user-mode-btn">USER PLAY</button>
+                        <button id="ai-mode-btn" class="ai-btn">AI PLAY</button>
+                        <button id="training-mode-btn" class="training-btn">TRAINING</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="controls-container">
+            <div class="bottom-ui">
+                <p id="instructions">← → or A/D to move | ↑ ↓ to change speed</p>
+                <p id="speed-indicator">SPEED: 1.0x</p>
+            </div>
+            <div id="touch-controls">
+                <div class="touch-row">
+                    <button class="touch-btn" id="touch-up">▲</button>
+                </div>
+                <div class="touch-row">
+                    <button class="touch-btn" id="touch-left">◄</button>
+                    <button class="touch-btn" id="touch-down">▼</button>
+                    <button class="touch-btn" id="touch-right">►</button>
+                </div>
+            </div>
         </div>
     </div>
 
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const scoreDisplay = document.getElementById('score-display');
-        const livesDisplay = document.getElementById('lives-display');
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const messageBox = document.getElementById('message-box');
+        // --- Matter.js Module Aliases ---
+        const { Engine, Render, Runner, World, Bodies, Body, Events, Composite, Vector } = Matter;
 
-        // Game Constants
-        const SCREEN_WIDTH = 800;
-        const SCREEN_HEIGHT = 600;
-        const GRAVITY = 0.5;
-        const FPS = 60;
-        const MS_PER_FRAME = 1000 / FPS;
-
-        // Visual Colors
-        const PALETTE = {
-            sky: '#D6EAF8',
-            ground: '#A2D9CE',
-            trashCan: '#4d4f58',
-            slingshot: '#6C7A89',
-            trash: '#E9EBF1',
-            text: '#2C3E50',
-            messageBg: '#fffde7',
-            messageText: '#5d5d3b',
-            impactGlow: '#F5B041'
+        // --- Game Configuration ---
+        const CONFIG = {
+            GAME_WIDTH: 1000,
+            GAME_HEIGHT: 600,
+            GROUND_HEIGHT: 60,
+            CART_WIDTH: 100,
+            CART_HEIGHT: 50,
+            POLE_WIDTH: 20,
+            POLE_HEIGHT: 150,
+            FAILURE_ANGLE_DEG: 15,
+            USER_FORCE: 0.005, // 유저 조작을 위한 기본 힘
+            PIVOT_OFFSET_Y: -15,
+            CART_MAX_SPEED_MULTIPLIER: 2.0,
+            CART_MIN_SPEED_MULTIPLIER: 0.5,
+            WORLD_WIDTH_MULTIPLIER: 5,
         };
 
-        // Game Objects
-        let score = 0;
-        let lives = 3;
-        let isGameOver = false;
-        let trashCan = {
-            x: SCREEN_WIDTH * 0.7, // Position trash can to the right
-            y: SCREEN_HEIGHT - 70,
-            width: 120,
-            height: 15,
-            color: PALETTE.trashCan,
-            hitCooldown: 0
-        };
-
-        let trash = {
-            x: 0,
-            y: 0,
-            radius: 15,
-            vx: 0,
-            vy: 0,
-            isShot: false,
-            color: PALETTE.trash,
-            hasCollided: false,
-            glowAlpha: 0
-        };
-
-        let slingshot = {
-            x: SCREEN_WIDTH * 0.3, // Position slingshot to the left
-            y: SCREEN_HEIGHT - 50,
-            pullStrength: 0,
-            maxPull: 180
-        };
-
-        // AI Model Integration
-        let ortSession;
-        let modelLoaded = false;
-        let lastUpdateTime = 0;
-
-        // Normalization Constants (based on typical environment ranges)
-        // These are assumptions and may need fine-tuning to match the training environment
-        const NORM_SCREEN_WIDTH = SCREEN_WIDTH;
-        const NORM_SCREEN_HEIGHT = SCREEN_HEIGHT;
-        const NORM_MAX_VELOCITY = 40;
-        const NORM_MAX_ANG_VEL = Math.PI / 10;
-        const NORM_MAX_DIST = Math.sqrt(SCREEN_WIDTH * SCREEN_WIDTH + SCREEN_HEIGHT * SCREEN_HEIGHT);
+        // --- DOM Elements ---
+        const gameContainer = document.querySelector('.game-container');
+        const canvas = document.getElementById('game-canvas');
+        const scoreEl = document.getElementById('score');
+        const modal = document.getElementById('modal');
+        const gameModeIndicator = document.getElementById('game-mode-indicator');
+        const wsStatusEl = document.getElementById('ws-status');
+        const uiOverlay = document.getElementById('ui-overlay');
+        const speedIndicatorEl = document.getElementById('speed-indicator');
+        const controlsContainer = document.getElementById('controls-container');
         
-        // Actions
-        const ACTIONS = {
-            AIM_LEFT: 0,
-            AIM_RIGHT: 1,
-            INCREASE_PULL: 2,
-            DECREASE_PULL: 3,
-            RELEASE: 4
+        // --- Color Palette from CSS ---
+        const STYLES = getComputedStyle(document.documentElement);
+        const COLORS = {
+            GROUND: STYLES.getPropertyValue('--ground-color').trim(),
+            CART: STYLES.getPropertyValue('--cart-color').trim(),
+            POLE: STYLES.getPropertyValue('--pole-color').trim(),
+            FAIL: STYLES.getPropertyValue('--fail-color').trim(),
         };
 
-        // --- Core Game Functions ---
-        function resetGame() {
-            isGameOver = false;
-            score = 0;
-            lives = 3;
-            updateUI();
-            resetTrash();
-            trashCan.x = SCREEN_WIDTH * 0.7; // Randomize or keep constant
-            messageBox.style.display = 'none';
+        // --- Game State ---
+        let engine, world, render, runner;
+        let cart, pole, ground;
+        let score = 0;
+        let isRoundOver = true;
+        let gameMode = 'USER';
+        let ws;
+        let cartSpeedMultiplier = 1.0;
+        let worldWidth;
+        let worldBounds;
+        let ortSession;
+        let isModelReady = false; // AI 모델 준비 완료 플래그
+        let latestAiAction = 0;
+        let aiDecisionIntervalId = null;
+        
+        // --- Sound Effects ---
+        let synth, moveSynth;
+        function setupSounds() {
+            synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "square" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.1 },
+            }).toDestination();
+            moveSynth = new Tone.NoiseSynth({
+                noise: { type: "pink" },
+                envelope: { attack: 0.001, decay: 0.05, sustain: 0 }
+            }).toDestination();
+            moveSynth.volume.value = -20;
         }
 
-        function resetTrash() {
-            trash.x = slingshot.x;
-            trash.y = slingshot.y;
-            trash.vx = 0;
-            trash.vy = 0;
-            trash.isShot = false;
-            trash.hasCollided = false;
-            trash.glowAlpha = 0;
-            slingshot.pullStrength = 0;
-        }
+        // --- Control State ---
+        const keys = {};
+        const touchState = { up: false, down: false, left: false, right: false };
+        window.addEventListener('keydown', e => { keys[e.code] = true; });
+        window.addEventListener('keyup', e => { keys[e.code] = false; });
+        
+        // --- Collision Categories ---
+        const COLLISION = {
+            DEFAULT: 0x0001,
+            CART: 0x0002,
+            POLE: 0x0004
+        };
 
-        function updateUI() {
-            scoreDisplay.textContent = `Score: ${score}`;
-            livesDisplay.textContent = `Lives: ${lives}`;
-        }
-
-        function showMessage(text, isError = false) {
-            messageBox.textContent = text;
-            messageBox.style.display = 'block';
-            if (isError) {
-                messageBox.style.backgroundColor = '#f2dede';
-                messageBox.style.color = '#a94442';
-                messageBox.style.borderColor = '#ebccd1';
-            } else {
-                messageBox.style.backgroundColor = PALETTE.messageBg;
-                messageBox.style.color = PALETTE.messageText;
-                messageBox.style.borderColor = '#fbeed5';
+        async function loadOnnxModel() {
+            try {
+                ortSession = await ort.InferenceSession.create('./model.onnx');
+                if (ortSession && ortSession.inputNames && ortSession.inputNames.length > 0) {
+                    isModelReady = true;
+                    console.log("ONNX model is fully loaded and ready.");
+                    if (gameMode === 'AI' && !aiDecisionIntervalId) {
+                        wsStatusEl.textContent = "AI Model: Loaded";
+                        wsStatusEl.style.color = '#0f0';
+                        startAIDecisionLoop();
+                    }
+                } else {
+                    throw new Error("Model metadata (inputNames) not available after creation.");
+                }
+            } catch (e) {
+                console.error(`Failed to load ONNX model: ${e}`);
+                isModelReady = false;
+                if (gameMode === 'AI') {
+                    wsStatusEl.textContent = "AI Model: Load Failed";
+                    wsStatusEl.style.color = '#f00';
+                }
             }
+        }
+
+        function setupTouchControls() {
+            const upBtn = document.getElementById('touch-up');
+            const downBtn = document.getElementById('touch-down');
+            const leftBtn = document.getElementById('touch-left');
+            const rightBtn = document.getElementById('touch-right');
+
+            const handleTouchStart = (dir) => (e) => { e.preventDefault(); touchState[dir] = true; };
+            const handleTouchEnd = (dir) => (e) => { e.preventDefault(); touchState[dir] = false; };
+            
+            const addListeners = (btn, dir) => {
+                btn.addEventListener('mousedown', handleTouchStart(dir));
+                btn.addEventListener('touchstart', handleTouchStart(dir), { passive: false });
+                btn.addEventListener('mouseup', handleTouchEnd(dir));
+                btn.addEventListener('mouseleave', handleTouchEnd(dir));
+                btn.addEventListener('touchend', handleTouchEnd(dir));
+            };
+
+            addListeners(upBtn, 'up');
+            addListeners(downBtn, 'down');
+            addListeners(leftBtn, 'left');
+            addListeners(rightBtn, 'right');
+        }
+
+        function init() {
+            engine = Engine.create();
+            world = engine.world;
+            world.gravity.y = 1;
+
+            render = Render.create({
+                canvas: canvas,
+                engine: engine,
+                options: {
+                    width: CONFIG.GAME_WIDTH,
+                    height: CONFIG.GAME_HEIGHT,
+                    wireframes: false,
+                    background: 'transparent',
+                }
+            });
+
+            runner = Runner.create();
+            
+            document.getElementById('user-mode-btn').addEventListener('click', () => setGameMode('USER'));
+            document.getElementById('ai-mode-btn').addEventListener('click', () => setGameMode('AI'));
+            document.getElementById('training-mode-btn').addEventListener('click', () => setGameMode('TRAINING'));
+
+            const savedMode = sessionStorage.getItem('cartpole_gameMode');
+            if (savedMode === 'TRAINING') {
+                setGameMode('TRAINING');
+            } else {
+                modal.classList.remove('hidden');
+            }
+            
+            Render.run(render);
+            Runner.run(runner, engine);
+            Events.on(engine, 'beforeUpdate', gameLoop);
+            setupTouchControls();
+            loadOnnxModel();
+        }
+
+        function startAIDecisionLoop() {
+            if (aiDecisionIntervalId) return;
+            aiDecisionIntervalId = setInterval(makeAIDecision, 50);
+            console.log("AI decision loop started.");
+        }
+
+        function stopAIDecisionLoop() {
+             if (aiDecisionIntervalId) {
+                clearInterval(aiDecisionIntervalId);
+                aiDecisionIntervalId = null;
+                console.log("AI decision loop stopped.");
+            }
+        }
+        
+        function setGameMode(mode) {
+            if (Tone.context.state !== 'running') {
+                Tone.start();
+                setupSounds();
+            }
+            gameMode = mode;
+            sessionStorage.setItem('cartpole_gameMode', mode);
+            updateUIMode();
+
+            stopAIDecisionLoop();
+            
+            if (runner) {
+                runner.enabled = (mode !== 'TRAINING');
+            }
+
+            // Show/hide controls based on mode
+            controlsContainer.style.display = (mode === 'USER') ? 'block' : 'none';
+
+            if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+            
+            if (mode === 'TRAINING') {
+                connectWebSocket();
+            } else if (mode === 'AI') {
+                wsStatusEl.textContent = isModelReady ? "AI Model: Loaded" : "AI Model: Loading...";
+                wsStatusEl.style.color = isModelReady ? '#0f0' : '#ff0';
+                if (isModelReady) {
+                    startAIDecisionLoop();
+                }
+            } else {
+                wsStatusEl.textContent = "Mode: User Play";
+                wsStatusEl.style.color = '#fff';
+            }
+            
+            modal.classList.add('hidden');
+            uiOverlay.classList.add('visible');
+            resetGame();
+        }
+        
+        function updateUIMode() {
+             gameModeIndicator.textContent = `${gameMode} MODE`;
+             gameModeIndicator.className = 'status-indicator';
+             gameModeIndicator.classList.add(`status-${gameMode.toLowerCase()}`);
+        }
+        
+        async function makeAIDecision() {
+            try {
+                if (isRoundOver || !isModelReady) return; 
+                
+                const observation = getObservation();
+                const tensor = new ort.Tensor('float32', Float32Array.from(observation), [1, observation.length]);
+                
+                const inputName = ortSession.inputNames[0];
+                const outputName = ortSession.outputNames[0];
+
+                const feeds = { [inputName]: tensor };
+                const results = await ortSession.run(feeds);
+                
+                const modelOutput = results[outputName].data[0];
+                
+                if (typeof modelOutput === 'number' && isFinite(modelOutput)) {
+                    latestAiAction = modelOutput;
+                } else {
+                    console.warn('Invalid AI model output:', modelOutput);
+                    latestAiAction = 0;
+                }
+                
+            } catch (e) {
+                console.error("AI decision loop error:", e);
+                latestAiAction = 0;
+            }
+        }
+
+        function gameLoop() {
+            if (isRoundOver) return;
+            
+            if (gameMode === 'USER') {
+                handleUserInput();
+            } else if (gameMode === 'AI') {
+                const force = latestAiAction * CONFIG.USER_FORCE;
+                if (isFinite(force)) {
+                    Body.applyForce(cart, cart.position, { x: force, y: 0 });
+                }
+            }
+            
+            checkWorldBounds(); 
+            updateCameraAndBackground(); 
+            
+            checkFailureConditions();
+            updateScore();
+        }
+
+        function checkWorldBounds() {
+            if (!cart || !pole) return;
+
+            const cartX = cart.position.x;
+            if (cartX > worldBounds.right) {
+                Body.setPosition(cart, { x: worldBounds.left + (cartX - worldBounds.right), y: cart.position.y });
+                Body.setPosition(pole, { x: worldBounds.left + (cartX - worldBounds.right), y: pole.position.y });
+            } else if (cartX < worldBounds.left) {
+                Body.setPosition(cart, { x: worldBounds.right - (worldBounds.left - cartX), y: cart.position.y });
+                Body.setPosition(pole, { x: worldBounds.right - (worldBounds.left - cartX), y: pole.position.y });
+            }
+        }
+
+        function updateCameraAndBackground() {
+            if (!cart) return;
+            const targetX = cart.position.x;
+            const currentCenterX = (render.bounds.min.x + render.bounds.max.x) / 2;
+            const newCenterX = currentCenterX + (targetX - currentCenterX) * 0.1; // Smooth LERP
+
+            Render.lookAt(render, {
+                min: { x: newCenterX - CONFIG.GAME_WIDTH / 2, y: 0 },
+                max: { x: newCenterX + CONFIG.GAME_WIDTH / 2, y: CONFIG.GAME_HEIGHT }
+            });
+
+            const scrollFactor = 1.0;
+            const bgPosX = -(newCenterX - CONFIG.GAME_WIDTH / 2) * scrollFactor;
+            gameContainer.style.backgroundPosition = `${bgPosX}px 0px`;
+        }
+        
+        function handleUserInput() {
+            // Speed control
+            if (keys['ArrowUp'] || touchState.up) {
+                cartSpeedMultiplier = Math.min(CONFIG.CART_MAX_SPEED_MULTIPLIER, cartSpeedMultiplier + 0.02);
+                updateSpeedIndicator();
+            }
+            if (keys['ArrowDown'] || touchState.down) {
+                cartSpeedMultiplier = Math.max(CONFIG.CART_MIN_SPEED_MULTIPLIER, cartSpeedMultiplier - 0.02);
+                updateSpeedIndicator();
+            }
+
+            // Movement control
+            let force = 0;
+            const forceValue = CONFIG.USER_FORCE * cartSpeedMultiplier;
+            if (keys['ArrowLeft'] || keys['KeyA'] || touchState.left) force = -forceValue;
+            if (keys['ArrowRight'] || keys['KeyD'] || touchState.right) force = forceValue;
+            
+            if (force !== 0) {
+                 Body.applyForce(cart, cart.position, { x: force, y: 0 });
+                 if(moveSynth) moveSynth.triggerAttack();
+            }
+        }
+
+        function updateSpeedIndicator() {
+            speedIndicatorEl.textContent = `SPEED: ${cartSpeedMultiplier.toFixed(1)}x`;
+        }
+
+        function checkFailureConditions() {
+            if (!pole) return;
+            const poleAngleDeg = pole.angle * (180 / Math.PI);
+            if (Math.abs(poleAngleDeg) > CONFIG.FAILURE_ANGLE_DEG) {
+                endRound();
+            }
+        }
+        
+        function endRound() {
+            if (isRoundOver) return;
+            isRoundOver = true;
+            
+            if(synth) synth.triggerAttackRelease("C2", "0.5");
+
+            pole.collisionFilter.mask = 0;
+            pole.render.fillStyle = COLORS.FAIL;
+            
+            if (gameMode === 'USER' || gameMode === 'AI') {
+                setTimeout(resetGame, 1500);
+            }
+        }
+
+        function resetGame() {
+            isRoundOver = false;
+            score = 0;
+            scoreEl.textContent = 0;
+            cartSpeedMultiplier = 1.0;
+            updateSpeedIndicator();
+            latestAiAction = 0;
+            
+            World.clear(world);
+
+            const startX = CONFIG.GAME_WIDTH / 2;
+            
+            worldWidth = CONFIG.GAME_WIDTH * CONFIG.WORLD_WIDTH_MULTIPLIER;
+            worldBounds = {
+                left: startX - worldWidth / 2,
+                right: startX + worldWidth / 2
+            };
+
+            ground = Bodies.rectangle(
+                startX, CONFIG.GAME_HEIGHT - CONFIG.GROUND_HEIGHT / 2, 
+                worldWidth, CONFIG.GROUND_HEIGHT, 
+                { isStatic: true, render: { fillStyle: COLORS.GROUND } }
+            );
+
+            const startY = CONFIG.GAME_HEIGHT - CONFIG.GROUND_HEIGHT - CONFIG.CART_HEIGHT / 2;
+
+            cart = Bodies.rectangle(startX, startY, CONFIG.CART_WIDTH, CONFIG.CART_HEIGHT, {
+                friction: 0.01, restitution: 0,
+                collisionFilter: { category: COLLISION.CART, mask: COLLISION.DEFAULT },
+                render: { fillStyle: COLORS.CART },
+            });
+            Body.setInertia(cart, Infinity);
+
+            const poleStartY = startY + CONFIG.PIVOT_OFFSET_Y - (CONFIG.POLE_HEIGHT / 2);
+
+            pole = Bodies.rectangle(
+                startX, poleStartY,
+                CONFIG.POLE_WIDTH, CONFIG.POLE_HEIGHT, {
+                density: 0.0005, frictionAir: 0.005, restitution: 0,
+                collisionFilter: { category: COLLISION.POLE, mask: COLLISION.DEFAULT },
+                render: { fillStyle: COLORS.POLE, strokeStyle: 'white', lineWidth: 2 }
+            });
+
+            const pivotPoint = { x: 0, y: CONFIG.POLE_HEIGHT / 2 };
+            const constraint = Matter.Constraint.create({
+                bodyA: cart, bodyB: pole,
+                pointA: { x: 0, y: CONFIG.PIVOT_OFFSET_Y }, 
+                pointB: pivotPoint,
+                stiffness: 1, length: 0, render: { visible: false }
+            });
+
+            World.add(world, [ground, cart, pole, constraint]);
+
+            Render.lookAt(render, {
+                min: { x: 0, y: 0 },
+                max: { x: CONFIG.GAME_WIDTH, y: CONFIG.GAME_HEIGHT }
+            });
+            
+            gameContainer.style.backgroundPosition = '0px 0px';
+
+            const minTiltRad = 0.017; // ~1 degree
+            const maxTiltRad = 0.05;  // ~2.8 degrees
+            const tiltMagnitude = minTiltRad + Math.random() * (maxTiltRad - minTiltRad);
+            const tiltDirection = Math.random() > 0.5 ? 1 : -1;
+            Body.setAngle(pole, tiltMagnitude * tiltDirection);
+        }
+        
+        function updateScore() {
+            score++;
+            scoreEl.textContent = score;
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket("ws://localhost:8765");
+            ws.onopen = () => {
+                wsStatusEl.textContent = "WebSocket: Connected";
+                wsStatusEl.style.color = '#0f0';
+            };
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.command === 'reset') resetForTraining();
+                else if (data.command === 'action') stepGameForTraining(data.action);
+            };
+            ws.onclose = () => {
+                wsStatusEl.textContent = "WebSocket: Disconnected";
+                wsStatusEl.style.color = '#f00';
+            };
+            ws.onerror = (error) => {
+                wsStatusEl.textContent = "WebSocket: Error";
+                wsStatusEl.style.color = '#f80';
+                console.error("WebSocket Error: ", error);
+            };
         }
 
         function getObservation() {
-            const dx = trashCan.x - trash.x;
-            const dy = trashCan.y - trash.y;
+            if (!cart || !pole) return [0, 0, 0, 0]; // Return a default observation if bodies don't exist
+            const normalizedX = (cart.position.x % CONFIG.GAME_WIDTH) / CONFIG.GAME_WIDTH;
+            return [
+                normalizedX,
+                cart.velocity.x,
+                pole.angle,
+                pole.angularVelocity
+            ];
+        }
+
+        function resetForTraining() {
+            resetGame();
+            isRoundOver = false;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ observation: getObservation() }));
+            }
+        }
+        
+        function stepGameForTraining(action) {
+            if (isRoundOver) return;
             
-            // Normalize values
-            const norm_pos_x = trash.x / NORM_SCREEN_WIDTH;
-            const norm_pos_y = trash.y / NORM_SCREEN_HEIGHT;
-            const norm_vel_x = trash.vx / NORM_MAX_VELOCITY;
-            const norm_vel_y = trash.vy / NORM_MAX_VELOCITY;
+            const force = action * CONFIG.USER_FORCE;
+            Body.applyForce(cart, cart.position, { x: force, y: 0 });
             
-            const angle = Math.atan2(dy, dx);
-            const norm_angle = (angle + Math.PI) / (2 * Math.PI);
-
-            const ang_vel = (trash.vx * dy - trash.vy * dx) / (dx*dx + dy*dy);
-            const norm_ang_vel = ang_vel / NORM_MAX_ANG_VEL;
-
-            const dist = Math.sqrt(dx**2 + dy**2);
-            const norm_dist_to_pad = dist / NORM_MAX_DIST;
-
-            // The observation space must exactly match the structure and order
-            return new Float32Array([
-                norm_pos_x,
-                norm_pos_y,
-                norm_vel_x,
-                norm_vel_y,
-                norm_angle,
-                norm_ang_vel,
-                norm_dist_to_pad
-            ]);
-        }
-
-        function argMax(array) {
-            if (array.length === 0) return -1;
-            return array.indexOf(Math.max(...array));
-        }
-
-        // --- Drawing Functions ---
-        function draw() {
-            ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-            ctx.fillStyle = PALETTE.sky;
-            ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-            ctx.fillStyle = PALETTE.ground;
-            ctx.fillRect(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH, 50);
-
-            // Draw slingshot base
-            ctx.fillStyle = PALETTE.slingshot;
-            ctx.beginPath();
-            ctx.arc(slingshot.x, slingshot.y, 25, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw trash can
-            ctx.fillStyle = PALETTE.trashCan;
-            ctx.beginPath();
-            ctx.roundRect(trashCan.x - trashCan.width / 2, trashCan.y, trashCan.width, trashCan.height, [10, 10, 0, 0]);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(trashCan.x, trashCan.y + 5, 25, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw trash ball with glowing effect on hit
-            if (trash.glowAlpha > 0) {
-                ctx.save();
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = `rgba(245, 176, 65, ${trash.glowAlpha})`;
-                ctx.fillStyle = PALETTE.impactGlow;
-                ctx.beginPath();
-                ctx.arc(trash.x, trash.y, trash.radius + 5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-            ctx.fillStyle = trash.color;
-            ctx.beginPath();
-            ctx.arc(trash.x, trash.y, trash.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw elastic
-            if (!trash.isShot) {
-                const angle = Math.atan2(trash.y - slingshot.y, trash.x - slingshot.x);
-                const dx = Math.cos(angle) * (trash.radius + 5);
-                const dy = Math.sin(angle) * (trash.radius + 5);
-
-                ctx.strokeStyle = '#4A4A4A';
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                
-                ctx.beginPath();
-                ctx.moveTo(slingshot.x - 10, slingshot.y - 10);
-                ctx.lineTo(trash.x + dx, trash.y + dy);
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.moveTo(slingshot.x + 10, slingshot.y - 10);
-                ctx.lineTo(trash.x + dx, trash.y + dy);
-                ctx.stroke();
-            }
-        }
-
-        // --- Game Loop ---
-        async function gameLoop(timestamp) {
-            if (isGameOver) return;
-            if (!modelLoaded) {
-                draw();
-                requestAnimationFrame(gameLoop);
-                return;
-            }
-
-            const deltaTime = timestamp - lastUpdateTime;
-            if (deltaTime < MS_PER_FRAME) {
-                requestAnimationFrame(gameLoop);
-                return;
-            }
-            lastUpdateTime = timestamp;
-
-            // Handle AI inference if trash is not shot
-            if (!trash.isShot) {
-                try {
-                    const observation = getObservation();
-                    const inputTensor = new ort.Tensor('float32', observation, [1, 7]);
-                    const results = await ortSession.run({ obs: inputTensor });
-                    
-                    const output = results.output.data;
-                    const action = argMax(output);
-
-                    switch(action) {
-                        case ACTIONS.AIM_LEFT:
-                            slingshot.x = Math.max(100, slingshot.x - 2);
-                            break;
-                        case ACTIONS.AIM_RIGHT:
-                            slingshot.x = Math.min(SCREEN_WIDTH - 100, slingshot.x + 2);
-                            break;
-                        case ACTIONS.INCREASE_PULL:
-                            slingshot.pullStrength = Math.min(slingshot.maxPull, slingshot.pullStrength + 2);
-                            break;
-                        case ACTIONS.DECREASE_PULL:
-                            slingshot.pullStrength = Math.max(0, slingshot.pullStrength - 2);
-                            break;
-                        case ACTIONS.RELEASE:
-                            const angle = Math.atan2(slingshot.y - trashCan.y, slingshot.x - trashCan.x);
-                            const releaseVelocity = slingshot.pullStrength / 20;
-                            trash.vx = releaseVelocity * Math.cos(angle);
-                            trash.vy = releaseVelocity * Math.sin(angle);
-                            trash.isShot = true;
-                            break;
-                    }
-                    trash.x = slingshot.x - Math.cos(angle) * slingshot.pullStrength;
-                    trash.y = slingshot.y - Math.sin(angle) * slingshot.pullStrength;
-                } catch (e) {
-                    console.error("AI Inference failed:", e);
-                }
-            }
-
-            // Update game state
-            if (trash.isShot) {
-                trash.vy += GRAVITY;
-                trash.x += trash.vx;
-                trash.y += trash.vy;
-            }
-
-            // Check for collision with the trash can (hit)
-            const dx = trash.x - trashCan.x;
-            const dy = trash.y - trashCan.y;
-            const distToCan = Math.sqrt(dx * dx + dy * dy);
-            if (distToCan < trash.radius + trashCan.width/2 && !trash.hasCollided) {
-                score += 1;
-                updateUI();
-                trash.hasCollided = true;
-                trash.glowAlpha = 1;
-                showMessage("Success!");
-                setTimeout(() => resetTrash(), 1500); // Wait for animation
-            }
+            Engine.update(engine, 1000 / 60);
+            checkWorldBounds(); 
             
-            // Animate glow after hit
-            if (trash.glowAlpha > 0) {
-                trash.glowAlpha -= 0.05;
-                if (trash.glowAlpha < 0) trash.glowAlpha = 0;
-            }
-
-            // Check if trash is out of bounds
-            if (trash.y > SCREEN_HEIGHT + 50 || trash.x < -50 || trash.x > SCREEN_WIDTH + 50) {
-                if (!trash.hasCollided) {
-                    lives -= 1;
-                    updateUI();
-                    showMessage("Miss!");
-                }
-                resetTrash();
-
-                if (lives <= 0) {
-                    isGameOver = true;
-                    showMessage("Game Over! Final Score: " + score);
-                }
-            }
+            checkFailureConditions();
             
-            draw();
-            requestAnimationFrame(gameLoop);
-        }
+            const reward = isRoundOver ? 0 : 1;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    observation: getObservation(),
+                    reward: reward,
+                    done: isRoundOver
+                }));
+            }
 
-        // --- Initialization ---
-        async function init() {
-            canvas.width = SCREEN_WIDTH;
-            canvas.height = SCREEN_HEIGHT;
-
-            // Load ONNX model
-            try {
-                // The input name 'obs' and output name 'output' are based on common ONNX conventions.
-                // If the model uses different names, this will need to be adjusted.
-                ortSession = await ort.InferenceSession.create('model.onnx');
-                modelLoaded = true;
-                loadingIndicator.style.display = 'none';
-                resetGame();
-                requestAnimationFrame(gameLoop);
-            } catch (e) {
-                console.error("Failed to load ONNX model:", e);
-                loadingIndicator.innerHTML = '<span class="text-red-500 font-bold">Error loading model. Check console.</span>';
+            if (isRoundOver && gameMode === 'TRAINING') {
+                resetForTraining();
             }
         }
-
-        window.onload = init;
+        init();
     </script>
 </body>
 </html>
+
